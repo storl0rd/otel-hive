@@ -13,9 +13,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
-	"github.com/getlawrence/lawrence-oss/internal/api/handlers"
-	"github.com/getlawrence/lawrence-oss/internal/metrics"
-	"github.com/getlawrence/lawrence-oss/internal/services"
+	"github.com/storl0rd/otel-hive/internal/api/handlers"
+	"github.com/storl0rd/otel-hive/internal/metrics"
+	"github.com/storl0rd/otel-hive/internal/services"
 )
 
 // AgentCommander defines the interface for sending commands to agents
@@ -28,47 +28,39 @@ type AgentCommander interface {
 
 // Server represents the HTTP API server
 type Server struct {
-	router           *gin.Engine
-	agentService     services.AgentService
-	telemetryService services.TelemetryQueryService
-	commander        AgentCommander
-	logger           *zap.Logger
-	httpServer       *http.Server
-	metrics          *metrics.APIMetrics
-	registry         *prometheus.Registry
+	router     *gin.Engine
+	agentService services.AgentService
+	commander  AgentCommander
+	logger     *zap.Logger
+	httpServer *http.Server
+	metrics    *metrics.APIMetrics
+	registry   *prometheus.Registry
 }
 
 // NewServer creates a new API server
-func NewServer(agentService services.AgentService, telemetryService services.TelemetryQueryService, commander AgentCommander, logger *zap.Logger) *Server {
-	// Set Gin to release mode for production
+func NewServer(agentService services.AgentService, commander AgentCommander, logger *zap.Logger) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
 
-	// Initialize metrics
 	registry := prometheus.NewRegistry()
-	metricsFactory := metrics.NewPrometheusFactory("lawrence", registry)
+	metricsFactory := metrics.NewPrometheusFactory("otel_hive", registry)
 	apiMetrics := metrics.NewAPIMetrics(metricsFactory)
 
-	// Add middleware
 	router.Use(gin.Recovery())
 	router.Use(corsMiddleware())
 	router.Use(loggingMiddleware(logger))
 
 	server := &Server{
-		router:           router,
-		agentService:     agentService,
-		telemetryService: telemetryService,
-		commander:        commander,
-		logger:           logger,
-		metrics:          apiMetrics,
-		registry:         registry,
+		router:       router,
+		agentService: agentService,
+		commander:    commander,
+		logger:       logger,
+		metrics:      apiMetrics,
+		registry:     registry,
 	}
 
-	// Add metrics middleware
 	router.Use(server.metricsMiddleware())
-
-	// Register routes
 	server.registerRoutes()
 
 	return server
@@ -89,7 +81,6 @@ func (s *Server) Start(port string) error {
 func (s *Server) Stop(ctx context.Context) error {
 	s.logger.Info("Stopping HTTP API server")
 
-	// Create a context with timeout for graceful shutdown
 	shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -98,14 +89,10 @@ func (s *Server) Stop(ctx context.Context) error {
 
 // registerRoutes registers all API routes
 func (s *Server) registerRoutes() {
-	// Initialize handlers
 	agentHandlers := handlers.NewAgentHandlers(s.agentService, s.commander, s.logger)
 	configHandlers := handlers.NewConfigHandlers(s.agentService, s.commander, s.logger)
-	telemetryHandlers := handlers.NewTelemetryHandlers(s.telemetryService, s.logger)
-	lawrenceQLHandlers := handlers.NewLawrenceQLHandlers(s.telemetryService, s.logger)
 	groupHandlers := handlers.NewGroupHandlers(s.agentService, s.commander, s.logger)
-	topologyHandlers := handlers.NewTopologyHandlers(s.agentService, s.telemetryService, s.logger)
-	healthHandlers := handlers.NewHealthHandlers(s.agentService, s.telemetryService, s.logger)
+	healthHandlers := handlers.NewHealthHandlers(s.agentService, s.logger)
 
 	// Metrics endpoint
 	s.router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{})))
@@ -120,7 +107,7 @@ func (s *Server) registerRoutes() {
 		agents := v1.Group("/agents")
 		{
 			agents.GET("", agentHandlers.HandleGetAgents)
-			agents.GET("/stats", agentHandlers.HandleGetAgentStats) // Must come before /:id
+			agents.GET("/stats", agentHandlers.HandleGetAgentStats)
 			agents.GET("/:id", agentHandlers.HandleGetAgent)
 			agents.PATCH("/:id/group", agentHandlers.HandleUpdateAgentGroup)
 			agents.POST("/:id/config", agentHandlers.HandleSendConfigToAgent)
@@ -132,29 +119,11 @@ func (s *Server) registerRoutes() {
 		{
 			configs.GET("", configHandlers.HandleGetConfigs)
 			configs.POST("", configHandlers.HandleCreateConfig)
-			configs.POST("/validate", configHandlers.HandleValidateConfig) // Must come before /:id
+			configs.POST("/validate", configHandlers.HandleValidateConfig)
 			configs.GET("/versions", configHandlers.HandleGetConfigVersions)
 			configs.GET("/:id", configHandlers.HandleGetConfig)
 			configs.PUT("/:id", configHandlers.HandleUpdateConfig)
 			configs.DELETE("/:id", configHandlers.HandleDeleteConfig)
-		}
-
-		// Telemetry routes
-		telemetry := v1.Group("/telemetry")
-		{
-			// Legacy endpoints
-			telemetry.POST("/metrics/query", telemetryHandlers.HandleQueryMetrics)
-			telemetry.POST("/logs/query", telemetryHandlers.HandleQueryLogs)
-			telemetry.POST("/traces/query", telemetryHandlers.HandleQueryTraces)
-			telemetry.GET("/overview", telemetryHandlers.HandleGetTelemetryOverview)
-			telemetry.GET("/services", telemetryHandlers.HandleGetServices)
-
-			// Lawrence QL endpoints
-			telemetry.POST("/query", lawrenceQLHandlers.HandleLawrenceQLQuery)
-			telemetry.POST("/query/validate", lawrenceQLHandlers.HandleValidateQuery)
-			telemetry.POST("/query/suggestions", lawrenceQLHandlers.HandleGetSuggestions)
-			telemetry.GET("/query/templates", lawrenceQLHandlers.HandleGetTemplates)
-			telemetry.GET("/query/functions", lawrenceQLHandlers.HandleGetFunctions)
 		}
 
 		// Group routes
@@ -170,29 +139,18 @@ func (s *Server) registerRoutes() {
 			groups.GET("/:id/agents", groupHandlers.HandleGetGroupAgents)
 			groups.POST("/:id/restart", groupHandlers.HandleRestartGroup)
 		}
-
-		// Topology routes
-		topology := v1.Group("/topology")
-		{
-			topology.GET("", topologyHandlers.HandleGetTopology)
-			topology.GET("/agent/:id", topologyHandlers.HandleGetAgentTopology)
-			topology.GET("/group/:id", topologyHandlers.HandleGetGroupTopology)
-		}
 	}
 
 	// Serve static files for the UI
 	s.router.Static("/assets", "./ui/dist/assets")
 
-	// SPA catch-all route - must be last
+	// SPA catch-all route — must be last
 	s.router.NoRoute(func(c *gin.Context) {
-		// Check if file exists
 		filePath := filepath.Join("./ui/dist", c.Request.URL.Path)
 		if _, err := os.Stat(filePath); err == nil {
 			c.File(filePath)
 			return
 		}
-
-		// Serve index.html for all other routes (SPA routing)
 		c.File("./ui/dist/index.html")
 	})
 }
@@ -216,12 +174,10 @@ func corsMiddleware() gin.HandlerFunc {
 // loggingMiddleware adds request logging with reduced verbosity
 func loggingMiddleware(logger *zap.Logger) gin.HandlerFunc {
 	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
-		// Skip logging for health checks and other frequent, low-value requests
 		if param.Path == "/health" || param.Path == "/ready" {
 			return ""
 		}
 
-		// Log errors at INFO level
 		if param.StatusCode >= 400 {
 			logger.Info("HTTP Request Error",
 				zap.String("method", param.Method),
@@ -233,7 +189,6 @@ func loggingMiddleware(logger *zap.Logger) gin.HandlerFunc {
 			return ""
 		}
 
-		// Log all other requests at DEBUG level to reduce noise
 		logger.Debug("HTTP Request",
 			zap.String("method", param.Method),
 			zap.String("path", param.Path),
@@ -250,20 +205,16 @@ func (s *Server) metricsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 
-		// Process request
 		c.Next()
 
-		// Track metrics
 		duration := time.Since(start)
 		s.metrics.RequestCount.Inc(1)
 		s.metrics.RequestDuration.Record(duration)
 
-		// Track errors
 		if c.Writer.Status() >= 400 {
 			s.metrics.RequestErrors.Inc(1)
 		}
 
-		// Track specific endpoint metrics
 		path := c.FullPath()
 		switch {
 		case path == "/health":
@@ -288,12 +239,6 @@ func (s *Server) metricsMiddleware() gin.HandlerFunc {
 			} else if c.Request.Method == "POST" {
 				s.metrics.ConfigCreateCount.Inc(1)
 			}
-		case path == "/api/v1/telemetry/metrics/query":
-			s.metrics.TelemetryQueryCount.Inc(1)
-			s.metrics.TelemetryQueryDuration.Record(duration)
-		case path == "/api/v1/topology":
-			s.metrics.TopologyQueryCount.Inc(1)
-			s.metrics.TopologyQueryDuration.Record(duration)
 		}
 	}
 }

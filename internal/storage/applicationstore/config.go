@@ -1,7 +1,7 @@
 package applicationstore
 
 import (
-	"github.com/getlawrence/lawrence-oss/internal/config"
+	"github.com/storl0rd/otel-hive/internal/config"
 )
 
 // FactoryConfig represents the configuration for the application store meta factory

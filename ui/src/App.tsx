@@ -4,7 +4,6 @@ import Layout from "./layout";
 import AgentsPage from "./pages/Agents";
 import ConfigsPage from "./pages/Configs";
 import GroupsPage from "./pages/Groups";
-import TelemetryPage from "./pages/Telemetry";
 import TopologyPage from "./pages/Topology";
 
 import "./App.css";
@@ -33,7 +32,6 @@ function App() {
                   path="/configs/:configId/edit"
                   element={<ConfigsPage mode="edit" />}
                 />
-                <Route path="/telemetry" element={<TelemetryPage />} />
                 <Route path="/topology" element={<TopologyPage />} />
               </Route>
             </Routes>

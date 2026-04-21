@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getlawrence/lawrence-oss/internal/services"
+	"github.com/storl0rd/otel-hive/internal/services"
 	"github.com/google/uuid"
 )
 

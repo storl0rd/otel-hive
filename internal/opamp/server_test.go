@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getlawrence/lawrence-oss/internal/services"
+	"github.com/storl0rd/otel-hive/internal/services"
 	"github.com/google/uuid"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/stretchr/testify/assert"

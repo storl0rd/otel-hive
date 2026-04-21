@@ -2,7 +2,6 @@ import {
   Server,
   Users,
   FileText,
-  BarChart3,
   GitBranch,
   Sparkle,
 } from "lucide-react";
@@ -61,12 +60,6 @@ export function AppSidebar() {
       url: "/configs",
       icon: FileText,
     },
-    {
-      key: "telemetry",
-      title: "Telemetry",
-      url: "/telemetry",
-      icon: BarChart3,
-    },
   ];
 
   return (
@@ -85,7 +78,7 @@ export function AppSidebar() {
               <SidebarMenuButton asChild>
                 <a href="/" className="flex items-center space-x-2">
                   <Sparkle className="h-4 w-4 text-primary" />
-                  <span>Lawrence</span>
+                  <span>OTel Hive</span>
                 </a>
               </SidebarMenuButton>
             )}

@@ -1,192 +1,119 @@
-# Lawrence OSS
+# otel-hive
 
-An open-source OpenTelemetry agent management platform with built-in observability backend.
+**OpAMP-based OTel Collector fleet management.** A hive brain for your OpenTelemetry Collectors — centralized config distribution, health monitoring, Git-based config sync, and a junior-operator-friendly UI.
 
-## Overview
+> Forked from [Lawrence OSS](https://github.com/getlawrence/lawrence-oss) (Apache 2.0). Stripped to a management plane and extended with Git sync, built-in auth, and multi-environment support.
 
-Lawrence OSS manages OpenTelemetry collectors via OpAMP protocol and stores their telemetry data for analysis. It runs as a single Go binary or Docker container with embedded storage.
+## What it does
 
-**What it does:**
-- Manages OpenTelemetry collector agents remotely via OpAMP
-- Ingests telemetry (traces, metrics, logs) via OTLP
-- Stores agent configurations and telemetry data
-- Provides a web UI for visualization and management
+- **Fleet visibility** — real-time agent health, status, and effective config across all collectors
+- **Remote configuration** — push config changes to any collector or group instantly via [OpAMP](https://opentelemetry.io/docs/specs/opamp/)
+- **Git sync** — store collector configs in Git; otel-hive polls for changes and distributes them automatically (GitHub, GitLab, Gitea, raw HTTP)
+- **Multi-environment** — manage prod/staging/dev collector fleets with isolated config scopes
+- **Audit log** — full history of who changed what config and when
+- **Built-in auth** — username/password + API keys; no external auth provider required
 
-**How it works:**
-1. Collectors connect to Lawrence's OpAMP server for remote management
-2. Collectors send their internal telemetry to Lawrence's OTLP endpoint
-3. Lawrence stores telemetry in DuckDB and serves it through a REST API
-4. The React UI queries the API to display agents, telemetry, and topology
-
-## Getting Started
-
-### Run with Docker
-
-Pull and run the latest release:
+## Quick start
 
 ```bash
-# Pull the image
-docker pull ghcr.io/getlawrence/lawrence-oss:latest
-
-# Run Lawrence
-docker run -d \
-  --name lawrence \
-  -p 8080:8080 \
-  -p 4320:4320 \
-  -p 4317:4317 \
-  -p 4318:4318 \
-  -v lawrence-data:/data \
-  ghcr.io/getlawrence/lawrence-oss:latest
-
-# Access the UI
-open http://localhost:8080
-```
-
-### Run with Docker Compose
-
-```bash
-# Clone the repository
-git clone https://github.com/getlawrence/lawrence-oss.git
-cd lawrence-oss
-
-# Start Lawrence
-docker compose up -d lawrence
-
-# Access the UI
-open http://localhost:8080
-```
-
-### Connect Your Agents
-
-Configure your OpenTelemetry collector to connect to Lawrence:
-
-```yaml
-# collector-config.yaml
-extensions:
-  opamp:
-    server:
-      ws:
-        endpoint: ws://localhost:4320/v1/opamp
-
-  health_check:
-    endpoint: 0.0.0.0:13133
-
-exporters:
-  otlp:
-    endpoint: localhost:4317
-    tls:
-      insecure: true
-
-service:
-  extensions: [opamp, health_check]
-
-  # Export internal collector telemetry to Lawrence
-  telemetry:
-    metrics:
-      readers:
-        - periodic:
-            exporter:
-              otlp:
-                protocol: grpc
-                endpoint: localhost:4317
-                tls:
-                  insecure: true
-
-    logs:
-      processors:
-        - batch:
-            exporter:
-              otlp:
-                protocol: grpc
-                endpoint: localhost:4317
-                tls:
-                  insecure: true
-
-  pipelines:
-    # Your data pipelines here
-    metrics:
-      receivers: [otlp]
-      exporters: [otlp]
-```
-
-Start your collector:
-```bash
-otelcol-contrib --config collector-config.yaml
-```
-
-## Development
-
-### Quick Start
-
-The development setup includes hot reloading for both the Go backend and React UI:
-
-```bash
-# Start all services with hot reloading
+# 1. Copy config and start
+cp otel-hive.yaml.example otel-hive.yaml   # edit as needed
 docker compose up -d
 
-# View logs
-docker compose logs -f lawrence
-
-# Access the UI at http://localhost:8080
-# UI dev server runs on http://localhost:5173
+# 2. Open UI
+open http://localhost:8080
 ```
 
-### What You Get
-
-- **Hot Reloading**: Changes to Go files automatically rebuild and restart
-- **Fast Rebuilds**: Persistent build cache for quick iterations  
-- **Debug Support**: Remote debugging on port 2345 with Delve
-- **Isolated Environment**: No need to install Go, Air, or build tools locally
-
-### Local Development (Without Docker)
-
-```bash
-# Install Air for hot reloading
-go install github.com/air-verse/air@latest
-
-# Run with hot reloading
-make dev
-
-# Or manually
-air -c .air.toml
-```
-
-Requirements: Go 1.24+, GCC/G++, SQLite development libraries
-
-### Additional Resources
-
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines and best practices
-- `.air.toml` - Air configuration for hot reloading customization
-- `Dockerfile.dev` - Development container configuration
+On first run, a setup wizard creates your admin account.
 
 ## Architecture
 
-Lawrence consists of several integrated components running in a single process:
+```
+┌──────────────────────────────────────────────────────────────┐
+│                  otel-hive  (:8080 + :4320)                   │
+│                                                               │
+│  React UI + REST API │ OpAMP WebSocket │ Git Sync Worker      │
+│  ─────────────────────────────────────────────────────────── │
+│                     SQLite (./data/app.db)                    │
+└──────────────────────────────────────────────────────────────┘
+        ↕ OpAMP                             ↕ HTTPS
+  OTel Collectors                     Git Repository
+  (+ OpAMP Supervisor)                (GitHub/GitLab/etc.)
+```
 
-**OpAMP Server** (port 4320)
-- Accepts WebSocket connections from OpenTelemetry collectors
-- Distributes configurations to connected agents
-- Tracks agent status and capabilities
+Single binary. No external database. Runs anywhere Docker runs.
 
-**OTLP Receiver** (ports 4317/4318)
-- Ingests traces, metrics, and logs via gRPC and HTTP
-- Stores raw telemetry in DuckDB
-- Runs background rollup jobs for aggregated metrics
+## Collector setup
 
-**Storage Layer**
-- SQLite: Agent metadata, groups, configurations
-- DuckDB: Raw telemetry and pre-aggregated rollups
+Each managed collector needs the [OpAMP Supervisor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/opampsupervisor) installed alongside it.
 
-**REST API** (port 8080)
-- Serves agent data, telemetry queries, and topology
-- Provides configuration management endpoints
-- Supports Lawrence QL query language
+```yaml
+# supervisor.yaml
+server:
+  endpoint: ws://otel-hive:4320/v1/opamp
+  headers:
+    Authorization: "Bearer YOUR_API_KEY"
 
-**Web UI**
-- React-based interface for agent management
-- Query builder for telemetry exploration
-- Topology visualization
+agent:
+  executable: /usr/bin/otelcol
+  config_apply_timeout: 30s
+
+capabilities:
+  accepts_remote_config: true
+  reports_effective_config: true
+  reports_health: true
+```
+
+## Git config layout
+
+```
+your-configs-repo/
+└── configs/
+    ├── environments/
+    │   ├── production/
+    │   │   ├── gateway.yaml       # → collectors: env=production, role=gateway
+    │   │   └── node-agent.yaml    # → collectors: env=production, role=node-agent
+    │   ├── staging/
+    │   │   └── gateway.yaml
+    │   └── default/
+    │       └── base.yaml          # fallback
+    └── groups/
+        └── aws-east.yaml          # → collectors: region=aws-east
+```
+
+## Resource requirements
+
+| Fleet size | vCPU | RAM | Disk |
+|-----------|------|-----|------|
+| < 20 collectors | 0.25 | 128 MB | 2 GB |
+| 20–100 | 0.5 | 256 MB | 10 GB |
+| 100–300 | 1 | 512 MB | 20 GB |
+| 300–500 | 2 | 1 GB | 50 GB |
+
+## Development
+
+```bash
+# Backend (Go)
+go run ./cmd/all-in-one --config ./otel-hive.yaml
+
+# Frontend (React + Vite)
+cd ui && npm install && npm run dev
+```
+
+## Roadmap
+
+- [x] OpAMP server (agent health, remote config, groups)
+- [ ] Built-in auth (username/password + API keys)
+- [ ] Git config sync (GitHub, GitLab, Gitea, raw HTTP)
+- [ ] Multi-environment support
+- [ ] Audit log
+- [ ] Config template library
+- [ ] Setup wizard
+- [ ] Helm chart for Kubernetes
+- [ ] All-in-one telemetry backend (roadmap)
 
 ## License
 
-Apache 2.0
+Apache 2.0 — see [LICENSE](LICENSE).
+
+Built on [otel.guru](https://otel.guru) by [Vaishak Nair](https://github.com/storl0rd).

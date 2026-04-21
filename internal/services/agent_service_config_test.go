@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getlawrence/lawrence-oss/internal/storage/applicationstore/memory"
+	"github.com/storl0rd/otel-hive/internal/storage/applicationstore/memory"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

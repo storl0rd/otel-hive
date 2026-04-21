@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/getlawrence/lawrence-oss/internal/api/handlers"
+	"github.com/storl0rd/otel-hive/internal/api/handlers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -165,48 +165,6 @@ func TestAPIConfigs(t *testing.T) {
 	configs, ok := configsResp["configs"].([]interface{})
 	require.True(t, ok)
 	assert.Empty(t, configs)
-}
-
-// TestAPITelemetryEndpoints tests telemetry query endpoints
-func TestAPITelemetryEndpoints(t *testing.T) {
-	ts := NewTestServer(t, true)
-	defer ts.Stop()
-	ts.Start()
-
-	// Test telemetry overview
-	resp, err := ts.GET("/api/v1/telemetry/overview")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// Test services endpoint
-	resp, err = ts.GET("/api/v1/telemetry/services")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-}
-
-// TestAPITopology tests topology endpoints
-func TestAPITopology(t *testing.T) {
-	ts := NewTestServer(t, true)
-	defer ts.Stop()
-	ts.Start()
-
-	resp, err := ts.GET("/api/v1/topology")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var topology map[string]interface{}
-	err = json.NewDecoder(resp.Body).Decode(&topology)
-	require.NoError(t, err)
-
-	// Should have nodes and edges arrays
-	assert.Contains(t, topology, "nodes")
-	assert.Contains(t, topology, "edges")
 }
 
 // TestAPICORS tests CORS headers

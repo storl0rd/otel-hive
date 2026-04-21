@@ -1,42 +1,31 @@
-import { apiPost, apiGet } from "./base";
-
-export interface LawrenceQLRequest {
-  query: string;
-  start_time?: string;
-  end_time?: string;
-  limit?: number;
-  agent_id?: string;
-  group_id?: string;
-}
+// Phase 1 stub — Lawrence QL API removed; will be replaced in Phase 2
+// Components that import from here will compile but are not reachable via routing.
 
 export interface QueryResult {
-  type: "metrics" | "logs" | "traces";
-  timestamp: string;
+  type: string;
+  columns?: string[];
+  rows?: unknown[][];
   labels: Record<string, string>;
-  value: unknown;
-  data?: Record<string, unknown>;
+  data: Record<string, unknown>;
+  value: number;
+  timestamp: string;
 }
 
-export interface QueryMeta {
+export interface LawrenceQLMeta {
   execution_time: number;
   row_count: number;
   query_type: string;
-  used_rollups: boolean;
 }
 
 export interface LawrenceQLResponse {
   results: QueryResult[];
-  meta: QueryMeta;
-}
-
-export interface ValidateQueryResponse {
-  valid: boolean;
   error?: string;
-  message?: string;
+  meta: LawrenceQLMeta;
 }
 
-export interface SuggestionsResponse {
-  suggestions: string[];
+export interface LawrenceQLRequest {
+  query: string;
+  [key: string]: unknown;
 }
 
 export interface QueryTemplate {
@@ -44,64 +33,54 @@ export interface QueryTemplate {
   name: string;
   description: string;
   query: string;
-  category: string;
-}
-
-export interface TemplatesResponse {
-  templates: QueryTemplate[];
+  category?: string;
 }
 
 export interface FunctionInfo {
   name: string;
   description: string;
-  example: string;
+  args?: string[];
 }
 
-export interface FunctionsResponse {
-  functions: FunctionInfo[];
+export interface ValidationResult {
+  valid: boolean;
+  error?: string;
 }
 
-/**
- * Execute a Lawrence QL query
- */
+export interface SuggestionsResponse {
+  suggestions: string[];
+}
+
 export async function executeLawrenceQL(
-  request: LawrenceQLRequest,
+  _request: LawrenceQLRequest,
 ): Promise<LawrenceQLResponse> {
-  return apiPost<LawrenceQLResponse>("/telemetry/query", request);
+  return {
+    results: [],
+    meta: { execution_time: 0, row_count: 0, query_type: "unknown" },
+  };
 }
 
-/**
- * Validate a Lawrence QL query
- */
 export async function validateQuery(
-  query: string,
-): Promise<ValidateQueryResponse> {
-  return apiPost<ValidateQueryResponse>("/telemetry/query/validate", { query });
+  _query: string,
+): Promise<ValidationResult> {
+  return { valid: true };
 }
 
-/**
- * Get query suggestions for auto-completion
- */
 export async function getQuerySuggestions(
-  query: string,
-  cursorPos: number,
+  _query: string,
+  _cursorPos: number,
 ): Promise<SuggestionsResponse> {
-  return apiPost<SuggestionsResponse>("/telemetry/query/suggestions", {
-    query,
-    cursor_pos: cursorPos,
-  });
+  return { suggestions: [] };
 }
 
-/**
- * Get query templates
- */
-export async function getQueryTemplates(): Promise<TemplatesResponse> {
-  return apiGet<TemplatesResponse>("/telemetry/query/templates");
+export async function getQueryTemplates(): Promise<{
+  templates: QueryTemplate[];
+}> {
+  return { templates: [] };
 }
 
-/**
- * Get available functions
- */
-export async function getQueryFunctions(): Promise<FunctionsResponse> {
-  return apiGet<FunctionsResponse>("/telemetry/query/functions");
+export async function getQueryFunctions(): Promise<{
+  functions: FunctionInfo[];
+}> {
+  return { functions: [] };
 }

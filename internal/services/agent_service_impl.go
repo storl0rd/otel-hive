@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/getlawrence/lawrence-oss/internal/storage/applicationstore"
+	"github.com/storl0rd/otel-hive/internal/storage/applicationstore"
 )
 
 // AgentServiceImpl implements the AgentService interface

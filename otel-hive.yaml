@@ -1,0 +1,12 @@
+server:
+  http_port: 8080
+  opamp_port: 4320
+
+storage:
+  app:
+    type: sqlite
+    path: ./data/app.db
+
+logging:
+  level: info
+  format: json

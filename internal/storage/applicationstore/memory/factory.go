@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/getlawrence/lawrence-oss/internal/storage/applicationstore/types"
+	"github.com/storl0rd/otel-hive/internal/storage/applicationstore/types"
 )
 
 // Factory implements ApplicationStoreFactory and creates storage components backed by memory store.

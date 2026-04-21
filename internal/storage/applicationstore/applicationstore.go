@@ -1,7 +1,7 @@
 package applicationstore
 
 // Re-export types from the types package for convenience
-import "github.com/getlawrence/lawrence-oss/internal/storage/applicationstore/types"
+import "github.com/storl0rd/otel-hive/internal/storage/applicationstore/types"
 
 // Type aliases for convenience
 type ApplicationStore = types.ApplicationStore

@@ -1,26 +1,20 @@
 services:
-  # Go backend with hot reloading (development mode)
-  lawrence:
+  otel-hive:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: lawrence-oss
+    container_name: otel-hive
     ports:
-      - "8080:8080"    # HTTP API
-      - "4320:4320"    # OpAMP server
-      - "4317:4317"    # OTLP gRPC
-      - "4318:4318"    # OTLP HTTP
-      - "2345:2345"    # Delve debugger (optional)
+      - "8080:8080"    # HTTP API + UI
+      - "4320:4320"    # OpAMP WebSocket
+      - "2345:2345"    # Delve debugger (dev only)
     volumes:
-      # Mount source code for hot reloading
       - ./cmd:/app/cmd
       - ./internal:/app/internal
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
-      - ./lawrence.yaml:/app/lawrence.yaml
-      # Persist data directory
-      - lawrence-data:/app/data
-      # Persist go build cache for faster rebuilds
+      - ./otel-hive.yaml:/app/otel-hive.yaml
+      - otel-hive-data:/app/data
       - go-build-cache:/root/.cache/go-build
       - go-mod-cache:/go/pkg/mod
     environment:
@@ -37,57 +31,40 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - lawrence-network
+      - otel-hive-network
 
-  # Development UI server with hot-reloading
   ui:
     build:
       context: ./ui
       dockerfile: Dockerfile
-    container_name: lawrence-ui
+    container_name: otel-hive-ui
     ports:
-      - "5173:5173"    # Vite dev server
+      - "5173:5173"
     volumes:
       - ./ui:/app
-      - /app/node_modules  # Prevent overwriting node_modules
+      - /app/node_modules
     environment:
       - VITE_BACKEND_URL=http://localhost:8080
     depends_on:
-      - lawrence
+      - otel-hive
     networks:
-      - lawrence-network
+      - otel-hive-network
     restart: unless-stopped
 
-  # Demo OpenTelemetry Collector with OpAMP support
-  collector:
-    image: otel/opentelemetry-collector-contrib:0.134.1
-    container_name: demo-collector
-    command: ['--config', '/etc/otelcol-contrib/config.yaml']
-    ports:
-      - "4319:4317"    # OTLP gRPC receiver
-      - "4321:4318"    # OTLP HTTP receiver
-      - "13133:13133"  # Health check
-    volumes:
-      - ./examples/collector/demo-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
-    depends_on:
-      - lawrence
-    networks:
-      - lawrence-network
-    restart: unless-stopped
-
+  # Demo collector with OpAMP Supervisor — connects to otel-hive on startup
   supervisor:
     build:
       context: ./examples/supervisor
       dockerfile: Dockerfile
     container_name: demo-supervisor
     depends_on:
-      - lawrence
+      - otel-hive
     networks:
-      - lawrence-network
+      - otel-hive-network
     restart: unless-stopped
 
 volumes:
-  lawrence-data:
+  otel-hive-data:
     driver: local
   go-build-cache:
     driver: local
@@ -95,5 +72,5 @@ volumes:
     driver: local
 
 networks:
-  lawrence-network:
+  otel-hive-network:
     driver: bridge

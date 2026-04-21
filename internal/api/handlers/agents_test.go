@@ -11,8 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getlawrence/lawrence-oss/internal/services"
-	"github.com/getlawrence/lawrence-oss/internal/testutils"
+	"github.com/storl0rd/otel-hive/internal/services"
+	"github.com/storl0rd/otel-hive/internal/testutils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

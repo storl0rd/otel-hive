@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/getlawrence/lawrence-oss/internal/services"
+	"github.com/storl0rd/otel-hive/internal/services"
 )
 
 // GroupHandlers handles group-related API endpoints

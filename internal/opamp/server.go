@@ -12,8 +12,8 @@ import (
 	"github.com/open-telemetry/opamp-go/server/types"
 	"go.uber.org/zap"
 
-	"github.com/getlawrence/lawrence-oss/internal/metrics"
-	"github.com/getlawrence/lawrence-oss/internal/services"
+	"github.com/storl0rd/otel-hive/internal/metrics"
+	"github.com/storl0rd/otel-hive/internal/services"
 )
 
 // DefaultOTelConfig provides the default OpenTelemetry Collector configuration

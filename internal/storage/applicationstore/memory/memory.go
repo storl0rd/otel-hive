@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getlawrence/lawrence-oss/internal/storage/applicationstore/types"
+	"github.com/storl0rd/otel-hive/internal/storage/applicationstore/types"
 	"github.com/google/uuid"
 )
 

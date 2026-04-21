@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getlawrence/lawrence-oss/internal/storage/applicationstore/types"
+	"github.com/storl0rd/otel-hive/internal/storage/applicationstore/types"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"

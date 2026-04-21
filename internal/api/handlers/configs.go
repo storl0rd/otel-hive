@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	"github.com/getlawrence/lawrence-oss/internal/services"
+	"github.com/storl0rd/otel-hive/internal/services"
 )
 
 // ConfigHandlers handles config-related API endpoints
