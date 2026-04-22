@@ -7,6 +7,13 @@ storage:
     type: sqlite
     path: ./data/app.db
 
+auth:
+  # Set a strong random secret here or via JWT_SECRET env var.
+  # Generate one with: openssl rand -hex 32
+  jwt_secret: "change-me-in-production"
+  access_token_expiry: "15m"
+  refresh_token_expiry: "168h"
+
 logging:
   level: info
   format: json

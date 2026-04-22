@@ -1,6 +1,7 @@
 package applicationstore
 
 import (
+	"database/sql"
 	"fmt"
 	"io"
 
@@ -128,6 +129,25 @@ func (f *Factory) Close() error {
 // GetStorageType returns the configured storage type
 func (f *Factory) GetStorageType() string {
 	return f.Config.Type
+}
+
+// DBProvider is implemented by concrete factories that can expose the underlying
+// *sql.DB handle (used to share a connection with the auth package).
+type DBProvider interface {
+	DB() *sql.DB
+}
+
+// DB returns the underlying *sql.DB from the SQLite backend, or nil if the
+// configured backend is not SQLite or does not implement DBProvider.
+func (f *Factory) DB() *sql.DB {
+	factory, ok := f.factories[f.Config.Type]
+	if !ok {
+		return nil
+	}
+	if p, ok := factory.(DBProvider); ok {
+		return p.DB()
+	}
+	return nil
 }
 
 // IsStorageTypeSupported checks if a storage type is supported

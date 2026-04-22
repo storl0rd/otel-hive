@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Server  ServerConfig  `yaml:"server"`
 	Storage StorageConfig `yaml:"storage"`
+	Auth    AuthConfig    `yaml:"auth"`
 	Logging LoggingConfig `yaml:"logging"`
 }
 
@@ -28,6 +29,15 @@ type StorageConfig struct {
 type AppStorageConfig struct {
 	Type string `yaml:"type"`
 	Path string `yaml:"path"`
+}
+
+// AuthConfig contains authentication configuration
+type AuthConfig struct {
+	// JWTSecret is used to sign JWT tokens. If empty, a random secret is
+	// generated at startup and persisted in the database (survives restarts).
+	JWTSecret           string `yaml:"jwt_secret"`
+	AccessTokenExpiry   string `yaml:"access_token_expiry"`  // default "15m"
+	RefreshTokenExpiry  string `yaml:"refresh_token_expiry"` // default "168h"
 }
 
 // LoggingConfig contains logging configuration
@@ -63,6 +73,10 @@ func DefaultConfig() *Config {
 				Type: "sqlite",
 				Path: "./data/app.db",
 			},
+		},
+		Auth: AuthConfig{
+			AccessTokenExpiry:  "15m",
+			RefreshTokenExpiry: "168h",
 		},
 		Logging: LoggingConfig{
 			Level:  "info",

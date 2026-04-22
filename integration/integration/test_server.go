@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/storl0rd/otel-hive/internal/api"
+	"github.com/storl0rd/otel-hive/internal/auth"
 	"github.com/storl0rd/otel-hive/internal/metrics"
 	"github.com/storl0rd/otel-hive/internal/opamp"
 	"github.com/storl0rd/otel-hive/internal/services"
@@ -23,6 +24,8 @@ import (
 	"github.com/storl0rd/otel-hive/internal/storage/applicationstore/memory"
 	"github.com/storl0rd/otel-hive/internal/storage/applicationstore/sqlite"
 )
+
+const testJWTSecret = "integration-test-secret-do-not-use-in-production"
 
 // TestServer represents a test instance of otel-hive for integration testing
 type TestServer struct {
@@ -35,6 +38,7 @@ type TestServer struct {
 
 	// Services
 	agentService services.AgentService
+	authService  *auth.Service
 
 	// Servers
 	apiServer   *api.Server
@@ -74,6 +78,7 @@ func NewTestServer(t *testing.T, useMemory bool) *TestServer {
 
 	ts.initMetrics()
 	ts.initServices()
+	ts.initAuth()
 	ts.initServers()
 
 	return ts
@@ -114,6 +119,25 @@ func (ts *TestServer) initServices() {
 	ts.agentService = services.NewAgentService(appStore, ts.logger)
 }
 
+// initAuth initializes the auth service for testing.
+// For SQLite backends the auth store shares the same DB connection.
+// For in-memory backends auth is unavailable (authService remains nil).
+func (ts *TestServer) initAuth() {
+	provider, ok := ts.appStoreFactory.(applicationstore.DBProvider)
+	if !ok {
+		return
+	}
+	db := provider.DB()
+	if db == nil {
+		return
+	}
+	authStore, err := auth.NewStore(db)
+	if err != nil {
+		ts.t.Fatalf("Failed to create auth store: %v", err)
+	}
+	ts.authService = auth.NewService(authStore, testJWTSecret, 15*time.Minute, 7*24*time.Hour)
+}
+
 // initServers initializes all servers
 func (ts *TestServer) initServers() {
 	agents := opamp.NewAgents(ts.logger)
@@ -125,7 +149,7 @@ func (ts *TestServer) initServers() {
 	}
 	ts.opampServer = opampServer
 
-	ts.apiServer = api.NewServer(ts.agentService, configSender, ts.logger)
+	ts.apiServer = api.NewServer(ts.agentService, ts.authService, configSender, ts.logger)
 }
 
 // Start starts all servers

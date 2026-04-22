@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/storl0rd/otel-hive/internal/api"
+	"github.com/storl0rd/otel-hive/internal/auth"
 	"github.com/storl0rd/otel-hive/internal/config"
 	"github.com/storl0rd/otel-hive/internal/metrics"
 	"github.com/storl0rd/otel-hive/internal/opamp"
@@ -98,6 +99,16 @@ func runOtelHive(cmd *cobra.Command, args []string) error {
 	agentService := services.NewAgentService(appStore, logger)
 	configSender := opamp.NewConfigSender(agents, logger)
 
+	// Auth service — shares the same SQLite DB via the factory
+	authStore, err := auth.NewStore(appStoreFactory.DB())
+	if err != nil {
+		logger.Fatal("Failed to initialize auth store", zap.Error(err))
+	}
+	jwtSecret := resolveJWTSecret(cfg, logger)
+	accessExpiry := parseDurationOrDefault(cfg.Auth.AccessTokenExpiry, 15*time.Minute, logger)
+	refreshExpiry := parseDurationOrDefault(cfg.Auth.RefreshTokenExpiry, 7*24*time.Hour, logger)
+	authService := auth.NewService(authStore, jwtSecret, accessExpiry, refreshExpiry)
+
 	opampServer, err := opamp.NewServer(agents, agentService, opampMetrics, "", "", logger)
 	if err != nil {
 		logger.Fatal("Failed to create OpAMP server", zap.Error(err))
@@ -112,7 +123,7 @@ func runOtelHive(cmd *cobra.Command, args []string) error {
 		_ = opampServer.Stop(ctx)
 	}()
 
-	apiServer := api.NewServer(agentService, configSender, logger)
+	apiServer := api.NewServer(agentService, authService, configSender, logger)
 
 	go func() {
 		if err := apiServer.Start(fmt.Sprintf("%d", cfg.Server.HTTPPort)); err != nil {
@@ -135,6 +146,32 @@ func runOtelHive(cmd *cobra.Command, args []string) error {
 
 	logger.Info("Shutting down otel-hive...")
 	return nil
+}
+
+// resolveJWTSecret returns the JWT secret from config, env var JWT_SECRET,
+// or panics with a clear message if neither is set.
+func resolveJWTSecret(cfg *config.Config, logger *zap.Logger) string {
+	if s := cfg.Auth.JWTSecret; s != "" {
+		return s
+	}
+	if s := os.Getenv("JWT_SECRET"); s != "" {
+		return s
+	}
+	logger.Fatal("JWT secret not configured — set auth.jwt_secret in otel-hive.yaml or the JWT_SECRET env var")
+	return "" // unreachable
+}
+
+func parseDurationOrDefault(s string, def time.Duration, logger *zap.Logger) time.Duration {
+	if s == "" {
+		return def
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		logger.Warn("invalid duration in config, using default",
+			zap.String("value", s), zap.Duration("default", def))
+		return def
+	}
+	return d
 }
 
 func versionCommand() *cobra.Command {

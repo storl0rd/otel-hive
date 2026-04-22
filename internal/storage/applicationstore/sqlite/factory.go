@@ -5,6 +5,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 
 	"go.uber.org/zap"
 
@@ -61,6 +62,15 @@ func (f *Factory) Purge(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// DB returns the underlying *sql.DB so other packages (e.g. auth) can share
+// the same connection without opening a second handle to the same file.
+func (f *Factory) DB() *sql.DB {
+	if f.store == nil {
+		return nil
+	}
+	return f.store.db
 }
 
 // Close implements storage.Closer

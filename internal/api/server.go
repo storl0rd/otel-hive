@@ -14,7 +14,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/storl0rd/otel-hive/internal/api/handlers"
+	"github.com/storl0rd/otel-hive/internal/auth"
 	"github.com/storl0rd/otel-hive/internal/metrics"
+	"github.com/storl0rd/otel-hive/internal/middleware"
 	"github.com/storl0rd/otel-hive/internal/services"
 )
 
@@ -28,17 +30,18 @@ type AgentCommander interface {
 
 // Server represents the HTTP API server
 type Server struct {
-	router     *gin.Engine
+	router       *gin.Engine
 	agentService services.AgentService
-	commander  AgentCommander
-	logger     *zap.Logger
-	httpServer *http.Server
-	metrics    *metrics.APIMetrics
-	registry   *prometheus.Registry
+	authService  *auth.Service
+	commander    AgentCommander
+	logger       *zap.Logger
+	httpServer   *http.Server
+	metrics      *metrics.APIMetrics
+	registry     *prometheus.Registry
 }
 
 // NewServer creates a new API server
-func NewServer(agentService services.AgentService, commander AgentCommander, logger *zap.Logger) *Server {
+func NewServer(agentService services.AgentService, authService *auth.Service, commander AgentCommander, logger *zap.Logger) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
@@ -54,6 +57,7 @@ func NewServer(agentService services.AgentService, commander AgentCommander, log
 	server := &Server{
 		router:       router,
 		agentService: agentService,
+		authService:  authService,
 		commander:    commander,
 		logger:       logger,
 		metrics:      apiMetrics,
@@ -93,15 +97,35 @@ func (s *Server) registerRoutes() {
 	configHandlers := handlers.NewConfigHandlers(s.agentService, s.commander, s.logger)
 	groupHandlers := handlers.NewGroupHandlers(s.agentService, s.commander, s.logger)
 	healthHandlers := handlers.NewHealthHandlers(s.agentService, s.logger)
+	authHandlers := handlers.NewAuthHandlers(s.authService, s.logger)
 
-	// Metrics endpoint
+	// Metrics endpoint (unauthenticated — typically blocked at network level in prod)
 	s.router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{})))
 
-	// Health check
+	// Health check (unauthenticated — used by Docker healthcheck)
 	s.router.GET("/health", healthHandlers.HandleHealth)
 
-	// API v1 routes
-	v1 := s.router.Group("/api/v1")
+	// Auth routes — public (no middleware)
+	apiAuth := s.router.Group("/api/auth")
+	{
+		apiAuth.GET("/setup/status", authHandlers.HandleSetupStatus)
+		apiAuth.POST("/setup", authHandlers.HandleSetup)
+		apiAuth.POST("/login", authHandlers.HandleLogin)
+		apiAuth.POST("/logout", authHandlers.HandleLogout)
+		apiAuth.POST("/refresh", authHandlers.HandleRefresh)
+	}
+
+	// Authenticated auth routes
+	apiAuthProtected := s.router.Group("/api/auth", middleware.Auth(s.authService))
+	{
+		apiAuthProtected.GET("/me", authHandlers.HandleMe)
+		apiAuthProtected.GET("/api-keys", authHandlers.HandleListApiKeys)
+		apiAuthProtected.POST("/api-keys", authHandlers.HandleCreateApiKey)
+		apiAuthProtected.DELETE("/api-keys/:id", authHandlers.HandleRevokeApiKey)
+	}
+
+	// API v1 routes — all protected by auth middleware
+	v1 := s.router.Group("/api/v1", middleware.Auth(s.authService))
 	{
 		// Agent routes
 		agents := v1.Group("/agents")
