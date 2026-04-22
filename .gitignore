@@ -50,3 +50,6 @@ ui/coverage/
 # Temporary files
 tmp/
 temp/
+
+# Git worktrees
+.worktrees/
