@@ -15,6 +15,7 @@ import (
 
 	"github.com/storl0rd/otel-hive/internal/api/handlers"
 	"github.com/storl0rd/otel-hive/internal/auth"
+	"github.com/storl0rd/otel-hive/internal/gitsync"
 	"github.com/storl0rd/otel-hive/internal/metrics"
 	"github.com/storl0rd/otel-hive/internal/middleware"
 	"github.com/storl0rd/otel-hive/internal/services"
@@ -30,18 +31,19 @@ type AgentCommander interface {
 
 // Server represents the HTTP API server
 type Server struct {
-	router       *gin.Engine
-	agentService services.AgentService
-	authService  *auth.Service
-	commander    AgentCommander
-	logger       *zap.Logger
-	httpServer   *http.Server
-	metrics      *metrics.APIMetrics
-	registry     *prometheus.Registry
+	router        *gin.Engine
+	agentService  services.AgentService
+	authService   *auth.Service
+	gitSyncSvc    *gitsync.Service
+	commander     AgentCommander
+	logger        *zap.Logger
+	httpServer    *http.Server
+	metrics       *metrics.APIMetrics
+	registry      *prometheus.Registry
 }
 
 // NewServer creates a new API server
-func NewServer(agentService services.AgentService, authService *auth.Service, commander AgentCommander, logger *zap.Logger) *Server {
+func NewServer(agentService services.AgentService, authService *auth.Service, gitSyncSvc *gitsync.Service, commander AgentCommander, logger *zap.Logger) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
@@ -58,6 +60,7 @@ func NewServer(agentService services.AgentService, authService *auth.Service, co
 		router:       router,
 		agentService: agentService,
 		authService:  authService,
+		gitSyncSvc:   gitSyncSvc,
 		commander:    commander,
 		logger:       logger,
 		metrics:      apiMetrics,
@@ -98,6 +101,10 @@ func (s *Server) registerRoutes() {
 	groupHandlers := handlers.NewGroupHandlers(s.agentService, s.commander, s.logger)
 	healthHandlers := handlers.NewHealthHandlers(s.agentService, s.logger)
 	authHandlers := handlers.NewAuthHandlers(s.authService, s.logger)
+	var gitSyncHandlers *handlers.GitSyncHandlers
+	if s.gitSyncSvc != nil {
+		gitSyncHandlers = handlers.NewGitSyncHandlers(s.gitSyncSvc, s.logger)
+	}
 
 	// Metrics endpoint (unauthenticated — typically blocked at network level in prod)
 	s.router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{})))
@@ -163,6 +170,22 @@ func (s *Server) registerRoutes() {
 			groups.GET("/:id/agents", groupHandlers.HandleGetGroupAgents)
 			groups.POST("/:id/restart", groupHandlers.HandleRestartGroup)
 		}
+	}
+
+	// Git sync routes — protected
+	if gitSyncHandlers != nil {
+		gitSources := v1.Group("/git-sources")
+		{
+			gitSources.GET("", gitSyncHandlers.HandleListSources)
+			gitSources.POST("", gitSyncHandlers.HandleCreateSource)
+			gitSources.GET("/:id", gitSyncHandlers.HandleGetSource)
+			gitSources.PUT("/:id", gitSyncHandlers.HandleUpdateSource)
+			gitSources.DELETE("/:id", gitSyncHandlers.HandleDeleteSource)
+			gitSources.POST("/:id/sync", gitSyncHandlers.HandleTriggerSync)
+		}
+
+		// Webhook — unauthenticated but HMAC-validated
+		s.router.POST("/api/webhook/git/:id", gitSyncHandlers.HandleWebhook)
 	}
 
 	// Serve static files for the UI

@@ -17,6 +17,7 @@ import (
 	"github.com/storl0rd/otel-hive/internal/api"
 	"github.com/storl0rd/otel-hive/internal/auth"
 	"github.com/storl0rd/otel-hive/internal/config"
+	"github.com/storl0rd/otel-hive/internal/gitsync"
 	"github.com/storl0rd/otel-hive/internal/metrics"
 	"github.com/storl0rd/otel-hive/internal/opamp"
 	"github.com/storl0rd/otel-hive/internal/services"
@@ -56,6 +57,11 @@ func main() {
 }
 
 func runOtelHive(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	configPath := viper.GetString("config")
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
@@ -123,7 +129,18 @@ func runOtelHive(cmd *cobra.Command, args []string) error {
 		_ = opampServer.Stop(ctx)
 	}()
 
-	apiServer := api.NewServer(agentService, authService, configSender, logger)
+	// Git sync service — shares the same SQLite DB and OpAMP config sender
+	gitSyncStore, err := gitsync.NewStore(appStoreFactory.DB())
+	if err != nil {
+		logger.Fatal("Failed to initialize git sync store", zap.Error(err))
+	}
+	gitSyncSvc := gitsync.NewService(gitSyncStore, agentService, configSender, logger)
+	if err := gitSyncSvc.Start(ctx); err != nil {
+		logger.Fatal("Failed to start git sync service", zap.Error(err))
+	}
+	defer gitSyncSvc.Stop()
+
+	apiServer := api.NewServer(agentService, authService, gitSyncSvc, configSender, logger)
 
 	go func() {
 		if err := apiServer.Start(fmt.Sprintf("%d", cfg.Server.HTTPPort)); err != nil {

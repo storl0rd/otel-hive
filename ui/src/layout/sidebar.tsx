@@ -3,6 +3,7 @@ import {
   Users,
   FileText,
   GitBranch,
+  FolderGit2,
   Sparkle,
   LogOut,
   KeyRound,
@@ -60,6 +61,7 @@ export function AppSidebar() {
     { key: "topology", title: "Topology", url: "/topology", icon: GitBranch },
     { key: "groups", title: "Groups", url: "/groups", icon: Users },
     { key: "configs", title: "Configs", url: "/configs", icon: FileText },
+    { key: "git-sources", title: "Git Sources", url: "/git-sources", icon: FolderGit2 },
   ];
 
   async function handleLogout() {

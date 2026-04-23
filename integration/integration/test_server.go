@@ -149,7 +149,7 @@ func (ts *TestServer) initServers() {
 	}
 	ts.opampServer = opampServer
 
-	ts.apiServer = api.NewServer(ts.agentService, ts.authService, configSender, ts.logger)
+	ts.apiServer = api.NewServer(ts.agentService, ts.authService, nil, configSender, ts.logger)
 }
 
 // Start starts all servers
