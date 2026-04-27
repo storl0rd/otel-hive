@@ -1,6 +1,6 @@
 package sqlite
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // InitialSchema creates the initial SQLite database schema
 const InitialSchema = `
@@ -111,7 +111,29 @@ END;
 INSERT OR IGNORE INTO schema_version (version) VALUES (1);
 `
 
+// AuditLogMigration adds the audit_log table (schema version 2).
+const AuditLogMigration = `
+CREATE TABLE IF NOT EXISTS audit_log (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	timestamp    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	actor_id     TEXT,
+	actor_name   TEXT,
+	event_type   TEXT NOT NULL,
+	resource_type TEXT,
+	resource_id  TEXT,
+	details      TEXT,
+	ip_address   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp   ON audit_log(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_actor_id    ON audit_log(actor_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_event_type  ON audit_log(event_type);
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (2);
+`
+
 // Migrations is a list of all schema migrations
 var Migrations = []string{
 	InitialSchema,
+	AuditLogMigration,
 }

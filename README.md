@@ -1,62 +1,109 @@
 # otel-hive
 
-**OpAMP-based OTel Collector fleet management.** A hive brain for your OpenTelemetry Collectors — centralized config distribution, health monitoring, Git-based config sync, and a junior-operator-friendly UI.
-
-> Forked from [Lawrence OSS](https://github.com/getlawrence/lawrence-oss) (Apache 2.0). Stripped to a management plane and extended with Git sync, built-in auth, and multi-environment support.
+**OpAMP-based OTel Collector fleet management.** A hive brain for your OpenTelemetry Collectors — centralized config distribution, health monitoring, Git-based config sync, and an operator-friendly UI that ships as a single Docker container.
 
 ## What it does
 
-- **Fleet visibility** — real-time agent health, status, and effective config across all collectors
-- **Remote configuration** — push config changes to any collector or group instantly via [OpAMP](https://opentelemetry.io/docs/specs/opamp/)
-- **Git sync** — store collector configs in Git; otel-hive polls for changes and distributes them automatically (GitHub, GitLab, Gitea, raw HTTP)
-- **Multi-environment** — manage prod/staging/dev collector fleets with isolated config scopes
-- **Audit log** — full history of who changed what config and when
-- **Built-in auth** — username/password + API keys; no external auth provider required
+| Feature | Detail |
+|---------|--------|
+| **Fleet visibility** | Real-time agent health, last-seen, status, and effective config across all collectors |
+| **Remote configuration** | Push config changes to any collector or group instantly via [OpAMP](https://opentelemetry.io/docs/specs/opamp/) |
+| **Git sync** | Store collector configs in Git; otel-hive polls for changes and distributes them automatically (GitHub, GitLab, Gitea, raw HTTP) |
+| **Built-in auth** | Username/password login + API keys; JWT sessions; no external auth provider needed |
+| **Audit log** | Full history of every write operation — who changed which config and when |
+| **Webhook support** | Trigger instant syncs on `git push` via HMAC-validated webhook |
 
-## Quick start
+---
+
+## Quick start — Docker Compose
 
 ```bash
-# 1. Copy config and start
-cp otel-hive.yaml.example otel-hive.yaml   # edit as needed
+# 1. Grab the compose file
+curl -fsSL https://raw.githubusercontent.com/storl0rd/otel-hive/main/docker-compose.yml -o docker-compose.yml
+
+# 2. Set required secrets (or put them in a .env file)
+export JWT_SECRET="$(openssl rand -hex 32)"
+
+# 3. Start
 docker compose up -d
 
-# 2. Open UI
+# 4. Open the UI → setup wizard creates your admin account
 open http://localhost:8080
 ```
 
-On first run, a setup wizard creates your admin account.
+**docker-compose.yml** (full reference):
+
+```yaml
+services:
+  otel-hive:
+    image: ghcr.io/storl0rd/otel-hive:latest
+    ports:
+      - "8080:8080"    # UI + REST API
+      - "4320:4320"    # OpAMP WebSocket
+    volumes:
+      - ./data:/app/data
+    environment:
+      JWT_SECRET: "${JWT_SECRET}"              # required
+      # GIT_REPO_URL: "https://github.com/org/otel-configs"  # optional: auto-configure a git source
+      # GIT_TOKEN: "${GIT_TOKEN}"              # optional: for private repos
+```
+
+> **First run:** otel-hive detects no users exist and serves a setup wizard at `/setup`. Create your admin account there — all API routes return `503 setup_required` until this is done.
+
+---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                  otel-hive  (:8080 + :4320)                   │
-│                                                               │
-│  React UI + REST API │ OpAMP WebSocket │ Git Sync Worker      │
-│  ─────────────────────────────────────────────────────────── │
-│                     SQLite (./data/app.db)                    │
-└──────────────────────────────────────────────────────────────┘
-        ↕ OpAMP                             ↕ HTTPS
-  OTel Collectors                     Git Repository
-  (+ OpAMP Supervisor)                (GitHub/GitLab/etc.)
+┌──────────────────────────────────────────────────────────────────┐
+│                otel-hive  (single container)                      │
+│                                                                   │
+│  ┌────────────────────┐  ┌──────────────────┐  ┌──────────────┐  │
+│  │  React UI + REST   │  │  OpAMP WebSocket  │  │  Git Sync    │  │
+│  │  API  :8080 (Gin)  │  │  :4320           │  │  Worker      │  │
+│  └────────┬───────────┘  └────────┬─────────┘  └──────┬───────┘  │
+│           └──────────────────────▼────────────────────┘          │
+│                      SQLite  ./data/app.db                        │
+│         agents │ configs │ groups │ users │ git_sources │         │
+│         api_keys │ audit_log │ git_source_file_shas               │
+└──────────────────────────────────────────────────────────────────┘
+         ↕ OpAMP WebSocket              ↕ HTTPS REST API
+  OTel Collectors                  Git Repository
+  (with OpAMP Supervisor           (GitHub / GitLab /
+   OR K8s-native mode)              Gitea / HTTP)
 ```
 
-Single binary. No external database. Runs anywhere Docker runs.
+**Single binary. Embedded SQLite. No external dependencies.** Suitable for fleets up to ~500 collectors; see [resource requirements](#resource-requirements) for sizing.
 
-## Collector setup
+---
 
-Each managed collector needs the [OpAMP Supervisor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/opampsupervisor) installed alongside it.
+## Connecting collectors
+
+### Option A — OpAMP Supervisor (recommended for bare-metal / VMs)
+
+Each managed collector runs alongside the [OpAMP Supervisor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/opampsupervisor). The Supervisor manages the collector as a subprocess and proxies OpAMP to otel-hive.
+
+**1. Install the supervisor binary:**
+
+```bash
+# Example — replace VERSION and ARCH as needed
+curl -fsSL https://github.com/open-telemetry/opentelemetry-collector-contrib/releases/download/vVERSION/opampsupervisor_linux_amd64 \
+  -o /usr/local/bin/opampsupervisor
+chmod +x /usr/local/bin/opampsupervisor
+```
+
+**2. Create `supervisor.yaml`:**
 
 ```yaml
-# supervisor.yaml
 server:
   endpoint: ws://otel-hive:4320/v1/opamp
   headers:
-    Authorization: "Bearer YOUR_API_KEY"
+    Authorization: "Bearer YOUR_API_KEY"   # create in otel-hive UI → API Keys
 
 agent:
   executable: /usr/bin/otelcol
   config_apply_timeout: 30s
+  bootstrap_config_file: /etc/otelcol/bootstrap.yaml  # used before first remote config arrives
 
 capabilities:
   accepts_remote_config: true
@@ -64,56 +111,180 @@ capabilities:
   reports_health: true
 ```
 
-## Git config layout
+**3. Run:**
+
+```bash
+opampsupervisor --config supervisor.yaml
+```
+
+The collector appears in otel-hive within seconds. You can now push configs from the UI or let Git sync handle it.
+
+### Option B — Kubernetes (ConfigMap-based, no supervisor required)
+
+For K8s workloads you can skip the supervisor entirely. otel-hive pushes configs via the OpAMP extension built into the collector itself, or you can use a simple GitOps loop:
+
+```yaml
+# collector-deploy.yaml (simplified)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otelcol
+spec:
+  template:
+    spec:
+      containers:
+        - name: otelcol
+          image: otel/opentelemetry-collector-contrib:latest
+          args: ["--config=/conf/config.yaml"]
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+      volumes:
+        - name: config
+          configMap:
+            name: otelcol-config   # otel-hive updates this ConfigMap on sync
+```
+
+> K8s-native mode (ConfigMap update + rollout restart) is on the roadmap. Until then, use the OpAMP extension or the supervisor approach above.
+
+---
+
+## Git config sync
+
+Store your collector configs in a Git repository. otel-hive polls for changes and pushes them to matching agents automatically.
+
+### Repository layout
 
 ```
 your-configs-repo/
-└── configs/
+└── configs/                        ← config_root (default)
     ├── environments/
     │   ├── production/
-    │   │   ├── gateway.yaml       # → collectors: env=production, role=gateway
-    │   │   └── node-agent.yaml    # → collectors: env=production, role=node-agent
+    │   │   ├── gateway.yaml        → agents with env=production, role=gateway
+    │   │   └── node-agent.yaml     → agents with env=production, role=node-agent
     │   ├── staging/
-    │   │   └── gateway.yaml
+    │   │   └── gateway.yaml        → agents with env=staging, role=gateway
     │   └── default/
-    │       └── base.yaml          # fallback
+    │       └── base.yaml           → all agents (fallback)
     └── groups/
-        └── aws-east.yaml          # → collectors: region=aws-east
+        └── aws-east.yaml           → agents with group.id=aws-east
 ```
+
+Path segments map directly to agent labels. A collector is matched when **all** label selectors in the file's path match its registered labels.
+
+### Setting up a git source
+
+1. Go to **Git Sources** in the sidebar → **Add Source**
+2. Fill in: provider, repo URL, access token (for private repos), branch, config root
+3. Set a poll interval (default: 5 minutes)
+4. Optionally add a webhook secret for instant push-triggered syncs
+
+### Webhook setup (GitHub example)
+
+```
+URL:    https://your-otel-hive/api/webhook/git/<source-id>
+Content-Type: application/json
+Secret: <your webhook secret>
+Events: Push
+```
+
+---
+
+## API keys
+
+Collectors and CI/CD pipelines authenticate with API keys (prefix `ohk_`). Create them in the UI under **API Keys** or via the REST API:
+
+```bash
+curl -X POST https://your-otel-hive/api/auth/api-keys \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "ci-pipeline"}'
+```
+
+---
+
+## REST API
+
+All endpoints (except `/health`, `/metrics`, auth setup/login, and webhook) require `Authorization: Bearer <token>` or `X-API-Key: ohk_<key>`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/agents` | List all agents |
+| `POST` | `/api/v1/agents/:id/config` | Push config to agent |
+| `POST` | `/api/v1/agents/:id/restart` | Restart agent |
+| `GET/POST/PUT/DELETE` | `/api/v1/configs` | Manage config library |
+| `GET/POST/PUT/DELETE` | `/api/v1/groups` | Manage agent groups |
+| `GET/POST/PUT/DELETE` | `/api/v1/git-sources` | Manage git sources |
+| `POST` | `/api/v1/git-sources/:id/sync` | Trigger manual sync |
+| `GET` | `/api/v1/audit-log` | Paginated audit log |
+| `GET` | `/metrics` | Prometheus metrics |
+
+---
 
 ## Resource requirements
 
-| Fleet size | vCPU | RAM | Disk |
-|-----------|------|-----|------|
-| < 20 collectors | 0.25 | 128 MB | 2 GB |
-| 20–100 | 0.5 | 256 MB | 10 GB |
-| 100–300 | 1 | 512 MB | 20 GB |
-| 300–500 | 2 | 1 GB | 50 GB |
+| Fleet size | vCPU | RAM | Disk | Notes |
+|-----------|------|-----|------|-------|
+| Lab / dev (< 20) | 0.25 | 128 MB | 2 GB | Single container, SQLite |
+| Small (20–100) | 0.5 | 256 MB | 10 GB | Comfortable baseline |
+| Medium (100–300) | 1 | 512 MB | 20 GB | WAL mode handles concurrency |
+| Large (300–500) | 2 | 1 GB | 50 GB | Monitor SQLite write latency |
+| > 500 | — | — | — | PostgreSQL adapter planned |
+
+---
 
 ## Development
 
 ```bash
-# Backend (Go)
+# Backend
 go run ./cmd/all-in-one --config ./otel-hive.yaml
 
-# Frontend (React + Vite)
-cd ui && npm install && npm run dev
+# Frontend (separate terminal)
+cd ui && npm install && npm run dev    # Vite dev server at :5173
+
+# Run tests
+go test ./internal/... ./cmd/... ./integration/...
 ```
+
+**Config file** (`otel-hive.yaml`):
+
+```yaml
+server:
+  http_port: 8080
+  opamp_port: 4320
+
+auth:
+  jwt_secret: "change-me"    # or set JWT_SECRET env var
+  access_token_expiry: "15m"
+  refresh_token_expiry: "168h"
+
+database:
+  path: "./data/app.db"
+
+logging:
+  level: "info"
+  format: "json"
+```
+
+---
 
 ## Roadmap
 
-- [x] OpAMP server (agent health, remote config, groups)
-- [ ] Built-in auth (username/password + API keys)
-- [ ] Git config sync (GitHub, GitLab, Gitea, raw HTTP)
-- [ ] Multi-environment support
-- [ ] Audit log
-- [ ] Config template library
-- [ ] Setup wizard
-- [ ] Helm chart for Kubernetes
-- [ ] All-in-one telemetry backend (roadmap)
+- [x] OpAMP server — agent health, remote config, groups
+- [x] Built-in auth — username/password + JWT + API keys
+- [x] Git config sync — GitHub, GitLab, Gitea, raw HTTP; poll + webhook
+- [x] Audit log — paginated event history
+- [ ] Config template library (6 starter templates)
+- [ ] K8s-native config apply (ConfigMap + rollout)
+- [ ] PostgreSQL adapter for > 500 collector fleets
+- [ ] Helm chart
+- [ ] SAML/OIDC SSO
+- [ ] All-in-one telemetry backend (DuckDB / ClickHouse)
+
+---
 
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
 
-Built on [otel.guru](https://otel.guru) by [Vaishak Nair](https://github.com/storl0rd).
+Built by [Vaishak Nair](https://github.com/storl0rd) · [otel.guru](https://otel.guru)

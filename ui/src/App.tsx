@@ -17,6 +17,7 @@ import LoginPage from "./pages/Login";
 import SetupPage from "./pages/Setup";
 import ApiKeysPage from "./pages/ApiKeys";
 import GitSourcesPage from "./pages/GitSources";
+import AuditLogPage from "./pages/AuditLog";
 
 import "./App.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -128,6 +129,7 @@ function App() {
                   />
                   <Route path="/topology" element={<TopologyPage />} />
                   <Route path="/git-sources" element={<GitSourcesPage />} />
+                  <Route path="/audit-log" element={<AuditLogPage />} />
                   <Route path="/api-keys" element={<ApiKeysPage />} />
                 </Route>
               </Routes>

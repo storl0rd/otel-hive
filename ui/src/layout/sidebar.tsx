@@ -4,6 +4,7 @@ import {
   FileText,
   GitBranch,
   FolderGit2,
+  ClipboardList,
   Sparkle,
   LogOut,
   KeyRound,
@@ -62,6 +63,7 @@ export function AppSidebar() {
     { key: "groups", title: "Groups", url: "/groups", icon: Users },
     { key: "configs", title: "Configs", url: "/configs", icon: FileText },
     { key: "git-sources", title: "Git Sources", url: "/git-sources", icon: FolderGit2 },
+    { key: "audit-log", title: "Audit Log", url: "/audit-log", icon: ClipboardList },
   ];
 
   async function handleLogout() {

@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/storl0rd/otel-hive/internal/api/handlers"
+	"github.com/storl0rd/otel-hive/internal/audit"
 	"github.com/storl0rd/otel-hive/internal/auth"
 	"github.com/storl0rd/otel-hive/internal/gitsync"
 	"github.com/storl0rd/otel-hive/internal/metrics"
@@ -31,19 +32,20 @@ type AgentCommander interface {
 
 // Server represents the HTTP API server
 type Server struct {
-	router        *gin.Engine
-	agentService  services.AgentService
-	authService   *auth.Service
-	gitSyncSvc    *gitsync.Service
-	commander     AgentCommander
-	logger        *zap.Logger
-	httpServer    *http.Server
-	metrics       *metrics.APIMetrics
-	registry      *prometheus.Registry
+	router       *gin.Engine
+	agentService services.AgentService
+	authService  *auth.Service
+	gitSyncSvc   *gitsync.Service
+	auditStore   *audit.Store
+	commander    AgentCommander
+	logger       *zap.Logger
+	httpServer   *http.Server
+	metrics      *metrics.APIMetrics
+	registry     *prometheus.Registry
 }
 
 // NewServer creates a new API server
-func NewServer(agentService services.AgentService, authService *auth.Service, gitSyncSvc *gitsync.Service, commander AgentCommander, logger *zap.Logger) *Server {
+func NewServer(agentService services.AgentService, authService *auth.Service, gitSyncSvc *gitsync.Service, auditStore *audit.Store, commander AgentCommander, logger *zap.Logger) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
@@ -61,6 +63,7 @@ func NewServer(agentService services.AgentService, authService *auth.Service, gi
 		agentService: agentService,
 		authService:  authService,
 		gitSyncSvc:   gitSyncSvc,
+		auditStore:   auditStore,
 		commander:    commander,
 		logger:       logger,
 		metrics:      apiMetrics,
@@ -104,6 +107,12 @@ func (s *Server) registerRoutes() {
 	var gitSyncHandlers *handlers.GitSyncHandlers
 	if s.gitSyncSvc != nil {
 		gitSyncHandlers = handlers.NewGitSyncHandlers(s.gitSyncSvc, s.logger)
+	}
+	var auditHandlers *handlers.AuditHandlers
+	if s.auditStore != nil {
+		auditHandlers = handlers.NewAuditHandlers(s.auditStore, s.logger)
+		// Audit middleware runs globally (no-ops on GET/4xx/5xx)
+		s.router.Use(middleware.Audit(s.auditStore, s.logger))
 	}
 
 	// Metrics endpoint (unauthenticated — typically blocked at network level in prod)
@@ -170,6 +179,11 @@ func (s *Server) registerRoutes() {
 			groups.GET("/:id/agents", groupHandlers.HandleGetGroupAgents)
 			groups.POST("/:id/restart", groupHandlers.HandleRestartGroup)
 		}
+	}
+
+	// Audit log
+	if auditHandlers != nil {
+		v1.GET("/audit-log", auditHandlers.HandleList)
 	}
 
 	// Git sync routes — protected

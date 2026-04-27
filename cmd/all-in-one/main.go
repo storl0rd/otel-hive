@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/storl0rd/otel-hive/internal/api"
+	"github.com/storl0rd/otel-hive/internal/audit"
 	"github.com/storl0rd/otel-hive/internal/auth"
 	"github.com/storl0rd/otel-hive/internal/config"
 	"github.com/storl0rd/otel-hive/internal/gitsync"
@@ -140,7 +141,10 @@ func runOtelHive(cmd *cobra.Command, args []string) error {
 	}
 	defer gitSyncSvc.Stop()
 
-	apiServer := api.NewServer(agentService, authService, gitSyncSvc, configSender, logger)
+	// Audit store — shares the same SQLite DB
+	auditStore := audit.NewStore(appStoreFactory.DB())
+
+	apiServer := api.NewServer(agentService, authService, gitSyncSvc, auditStore, configSender, logger)
 
 	go func() {
 		if err := apiServer.Start(fmt.Sprintf("%d", cfg.Server.HTTPPort)); err != nil {
